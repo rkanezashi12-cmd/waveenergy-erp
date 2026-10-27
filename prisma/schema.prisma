@@ -1,0 +1,679 @@
+// オーダー発令・仕様確定管理アプリ データモデル
+// テーブル名・カラム名の日本語対応は docs/data-dictionary.md を参照
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── 列挙型 ─────────────────────────
+
+/// システム上のロール（SPEC §2.2）
+enum Role {
+  SALES // 営業
+  SALES_MANAGER // 営業管理職
+  TECH_RECEPTION // 技術受付
+  TECH // 技術担当
+  VIEWER // 閲覧（関係部門）
+  ADMIN // 管理者
+}
+
+/// メール通知設定
+enum EmailPreference {
+  ALL // すべて受け取る（即時＋毎朝のまとめ）
+  DIGEST_ONLY // 毎朝のまとめのみ
+  NONE // メールを受け取らない（アプリ内通知のみ）
+}
+
+/// 確認担当区分
+enum ResponsibleType {
+  SALES // 営業
+  TECH // 技術
+}
+
+/// タスク種別の既定担当
+enum TaskDefaultAssignee {
+  SALES // オーダーの営業担当
+  TECH // オーダーの技術担当
+  NONE // 既定なし（起票時に選択）
+}
+
+enum OrderStatus {
+  DRAFT // 下書き
+  ACCEPT_PENDING // 受入待ち
+  RETURNED // 差戻し
+  SPEC_PENDING // 仕様確定待ち
+  SPEC_FIXED // 仕様確定
+  COMPLETED // 完了
+  CANCELLED // 取消
+}
+
+enum NumberSource {
+  AUTO // 自動採番
+  MANUAL // 既存番号の手入力（移行用）
+}
+
+enum DeliveryType {
+  FIXED // 確定
+  TENTATIVE // 仮
+}
+
+enum OrderDocType {
+  PURCHASE_ORDER // 注文書
+  LETTER_OF_INTENT // 内示書
+}
+
+enum SpecInputType {
+  TEXT // 1行テキスト
+  TEXTAREA // 複数行テキスト
+  TEXTAREA_NONE // 複数行テキスト（「なし」を明示的に選べる）
+  NUMBER // 数値
+  DATE // 日付
+  SELECT // 選択（1つ）
+  MULTISELECT // 選択（複数）
+}
+
+enum ValueState {
+  FILLED // 入力済み
+  UNRESOLVED // 未確定
+  NOT_APPLICABLE // 該当なし
+}
+
+enum DocRequirement {
+  REQUIRED // 必須
+  CONDITIONAL // 条件付き
+  OPTIONAL // 任意
+}
+
+enum DocState {
+  ATTACHED // 添付済み
+  NOT_OBTAINED // 未入手
+  NOT_APPLICABLE // 該当なし
+}
+
+enum UnresolvedTarget {
+  SPEC_FIELD // 要求仕様書の項目
+  DOCUMENT // 資料
+  DELIVERY // 納期（納期区分「仮」）
+  OTHER // その他
+}
+
+enum ConfirmTarget {
+  CUSTOMER // 顧客
+  INTERNAL // 社内
+}
+
+enum DesignImpact {
+  CAN_START // 着手可
+  PARTIAL_START // 一部着手可
+  CANNOT_START // 着手不可
+}
+
+enum UnresolvedStatus {
+  OPEN // 未確定
+  CHECKING // 確認中
+  RESOLVED // 確定
+  WITHDRAWN // 取下げ
+}
+
+enum TaskStatus {
+  TODO // 未着手
+  IN_PROGRESS // 対応中
+  DONE // 完了
+}
+
+enum MessageKind {
+  INTERNAL // 社内連絡
+  CUSTOMER_RECORD // 顧客とのやり取り記録
+}
+
+enum ContactChannel {
+  PHONE // 電話
+  EMAIL // メール
+  MEETING // 打合せ
+  OTHER // その他
+}
+
+enum NotificationType {
+  ORDER_ISSUED // 発令
+  ORDER_ACCEPTED // 受入
+  ORDER_RETURNED // 差戻し
+  TECH_ASSIGNED // 技術担当の割当
+  UNRESOLVED_ASSIGNED // 未確定項目の割当
+  TASK_ASSIGNED // タスクの割当
+  UNRESOLVED_RESOLVED // 未確定項目の確定
+  DOCUMENT_VERSION // 資料の新しい版の登録
+  SPEC_FIXED // 仕様確定
+  MENTION // メンション
+  ACCEPT_REMINDER // 受入催促
+  DAILY_DIGEST // 毎朝のまとめ
+}
+
+enum EmailResult {
+  NOT_REQUIRED // メール不要（設定でオフ、まとめのみ等）
+  SAVED // DB保存（デモ）
+  SENT // 送信済み
+  FAILED // 送信失敗
+}
+
+enum MailTransportType {
+  DB // DB保存のみ（デモ）
+  SMTP // SMTP送信
+  GRAPH // Microsoft Graph API（本番）
+}
+
+enum YearFormat {
+  YYYY // 西暦4桁
+  YY // 西暦下2桁
+  NONE // 年を含めない
+}
+
+enum ResetUnit {
+  NONE // リセットしない
+  YEAR // 暦年でリセット
+  FISCAL_YEAR // 年度でリセット
+}
+
+enum AiRunStatus {
+  SUCCEEDED
+  FAILED
+}
+
+// ───────────────────────── マスタ ─────────────────────────
+
+/// 部署
+model Department {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  parentId  String?
+  parent    Department?  @relation("DepartmentTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentTree")
+  sortOrder Int          @default(0)
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users              User[]
+  orders             Order[]
+  notificationGroups NotificationGroup[] @relation("NotificationGroupDepartments")
+}
+
+/// ユーザー
+model User {
+  id                 String          @id @default(cuid())
+  name               String
+  email              String          @unique
+  passwordHash       String?
+  mustChangePassword Boolean         @default(true)
+  departmentId       String?
+  department         Department?     @relation(fields: [departmentId], references: [id])
+  roles              Role[]
+  active             Boolean         @default(true)
+  emailPreference    EmailPreference @default(ALL)
+  lastLoginAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  salesOrders         Order[]             @relation("OrderSales")
+  techOrders          Order[]             @relation("OrderTech")
+  createdOrders       Order[]             @relation("OrderCreatedBy")
+  receptionCategories ProductCategory[]   @relation("CategoryReception")
+  notificationGroups  NotificationGroup[] @relation("NotificationGroupUsers")
+  assignedUnresolved  UnresolvedItem[]    @relation("UnresolvedAssignee")
+  createdUnresolved   UnresolvedItem[]    @relation("UnresolvedCreatedBy")
+  resolvedUnresolved  UnresolvedItem[]    @relation("UnresolvedResolvedBy")
+  assignedTasks       Task[]              @relation("TaskAssignee")
+  createdTasks        Task[]              @relation("TaskCreatedBy")
+  messages            Message[]           @relation("MessageAuthor")
+  mentionedIn         Message[]           @relation("MessageMentions")
+  notifications       Notification[]
+  statusHistories     StatusHistory[]
+  documentVersions    DocumentVersion[]
+  aiRuns              AiRun[]
+  auditLogs           AuditLog[]
+}
+
+/// 顧客
+model Customer {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  note      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+}
+
+/// 製品区分
+model ProductCategory {
+  id                     String   @id @default(cuid())
+  code                   String   @unique
+  name                   String
+  /// 標準納期（月数）。短納期判定に使う
+  standardLeadTimeMonths Int?
+  sortOrder              Int      @default(0)
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  /// 技術受付の通知先
+  receptionUsers     User[]              @relation("CategoryReception")
+  /// 通知グループ（関係部門）
+  notificationGroups NotificationGroup[] @relation("CategoryNotificationGroups")
+  specFieldTemplates SpecFieldTemplate[]
+  documentTemplates  DocumentTemplate[]
+  orders             Order[]
+}
+
+/// 通知グループ（関係部門）
+model NotificationGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]            @relation("NotificationGroupUsers")
+  departments Department[]      @relation("NotificationGroupDepartments")
+  categories  ProductCategory[] @relation("CategoryNotificationGroups")
+}
+
+/// 仕様項目テンプレート（製品区分がNULLなら共通項目）
+model SpecFieldTemplate {
+  id                     String           @id @default(cuid())
+  productCategoryId      String?
+  productCategory        ProductCategory? @relation(fields: [productCategoryId], references: [id])
+  label                  String
+  inputType              SpecInputType    @default(TEXTAREA)
+  required               Boolean          @default(false)
+  /// 選択肢（SELECT / MULTISELECT 用）
+  options                String[]
+  description            String?
+  /// 未確定にしたときの確認担当区分の既定値（SPEC §2.3）
+  defaultResponsibleType ResponsibleType  @default(SALES)
+  sortOrder              Int              @default(0)
+  active                 Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  values          SpecValue[]
+  unresolvedItems UnresolvedItem[]
+}
+
+/// 資料テンプレート
+model DocumentTemplate {
+  id                     String          @id @default(cuid())
+  productCategoryId      String
+  productCategory        ProductCategory @relation(fields: [productCategoryId], references: [id])
+  name                   String
+  requirement            DocRequirement  @default(OPTIONAL)
+  description            String?
+  /// 未入手にしたときの確認担当区分の既定値
+  defaultResponsibleType ResponsibleType @default(SALES)
+  sortOrder              Int             @default(0)
+  active                 Boolean         @default(true)
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  documents OrderDocument[]
+}
+
+/// タスク種別
+model TaskType {
+  id              String              @id @default(cuid())
+  name            String              @unique
+  defaultAssignee TaskDefaultAssignee @default(SALES)
+  description     String?
+  sortOrder       Int                 @default(0)
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  tasks Task[]
+}
+
+/// 採番ルール（1行のみ使用。id = "default"）
+model NumberingRule {
+  id                   String     @id @default("default")
+  prefix               String     @default("WE-")
+  yearFormat           YearFormat @default(YYYY)
+  separator            String     @default("-")
+  digits               Int        @default(4)
+  resetUnit            ResetUnit  @default(YEAR)
+  /// 年度の開始月（resetUnit = FISCAL_YEAR のとき使用）
+  fiscalYearStartMonth Int        @default(4)
+  updatedAt            DateTime   @updatedAt
+
+  counters NumberingCounter[]
+}
+
+/// 採番の現在値（リセット単位ごと）
+model NumberingCounter {
+  ruleId    String
+  rule      NumberingRule @relation(fields: [ruleId], references: [id])
+  /// リセット単位のキー（例：2026、FY2026、ALL）
+  periodKey String
+  value     Int           @default(0)
+  updatedAt DateTime      @updatedAt
+
+  @@id([ruleId, periodKey])
+}
+
+/// システム設定（1行のみ使用。id = "default"）
+model SystemSetting {
+  id                         String   @id @default("default")
+  aiEnabled                  Boolean  @default(true)
+  /// 受入催促までの営業日数
+  acceptReminderBusinessDays Int      @default(2)
+  /// 未確定項目の期限が近いとみなす日数（毎朝のまとめ）
+  digestDueSoonDays          Int      @default(3)
+  updatedAt                  DateTime @updatedAt
+}
+
+// ───────────────────────── オーダー ─────────────────────────
+
+/// オーダー
+model Order {
+  id                     String           @id @default(cuid())
+  orderNumber            String           @unique
+  numberSource           NumberSource     @default(AUTO)
+  status                 OrderStatus      @default(DRAFT)
+  productCategoryId      String?
+  productCategory        ProductCategory? @relation(fields: [productCategoryId], references: [id])
+  customerId             String?
+  customer               Customer?        @relation(fields: [customerId], references: [id])
+  siteName               String?
+  endUser                String?
+  title                  String?
+  quantity               Decimal?         @db.Decimal(12, 2)
+  quantityUnit           String?
+  salesUserId            String
+  salesUser              User             @relation("OrderSales", fields: [salesUserId], references: [id])
+  salesDepartmentId      String?
+  salesDepartment        Department?      @relation(fields: [salesDepartmentId], references: [id])
+  techUserId             String?
+  techUser               User?            @relation("OrderTech", fields: [techUserId], references: [id])
+  contractDeliveryDate   DateTime?        @db.Date
+  deliveryType           DeliveryType?
+  /// 納期区分が「仮」のときの確定予定日
+  deliveryFixDueDate     DateTime?        @db.Date
+  shortLeadTime          Boolean          @default(false)
+  /// 短納期のとき、関係部門と事前協議済みか
+  shortLeadConsulted     Boolean?
+  shortLeadNote          String?
+  orderDocType           OrderDocType?
+  quoteNumber            String?
+  inquiryNumber          String?
+  issuedAt               DateTime?
+  /// 初回発令日時（レポート用。再発令で変わらない）
+  firstIssuedAt          DateTime?
+  issueCount             Int              @default(0)
+  unresolvedCountAtIssue Int?
+  acceptedAt             DateTime?
+  specFixedAt            DateTime?
+  completedAt            DateTime?
+  cancelledAt            DateTime?
+  lastAcceptReminderAt   DateTime?
+  /// 出図予定日（§12の拡張用。フェーズ1の画面には出さない）
+  plannedDrawingDate     DateTime?        @db.Date
+  /// 出図実績日（§12の拡張用。フェーズ1の画面には出さない）
+  actualDrawingDate      DateTime?        @db.Date
+  createdById            String
+  createdBy              User             @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  specValues      SpecValue[]
+  documents       OrderDocument[]
+  unresolvedItems UnresolvedItem[]
+  tasks           Task[]
+  messages        Message[]
+  statusHistories StatusHistory[]
+  notifications   Notification[]
+  aiRuns          AiRun[]
+
+  @@index([status])
+  @@index([salesUserId])
+  @@index([techUserId])
+}
+
+/// 仕様項目の値
+model SpecValue {
+  id         String            @id @default(cuid())
+  orderId    String
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  templateId String
+  template   SpecFieldTemplate @relation(fields: [templateId], references: [id])
+  value      String?
+  state      ValueState?
+  naReason   String?
+  aiDerived  Boolean           @default(false)
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([orderId, templateId])
+}
+
+/// 資料（オーダーごとの資料枠。版は DocumentVersion に持つ）
+model OrderDocument {
+  id         String            @id @default(cuid())
+  orderId    String
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// テンプレート由来の資料。NULLなら追加資料
+  templateId String?
+  template   DocumentTemplate? @relation(fields: [templateId], references: [id])
+  /// 追加資料の資料名（テンプレート由来のときはテンプレートの資料名を使う）
+  name       String?
+  state      DocState?
+  naReason   String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  versions        DocumentVersion[]
+  unresolvedItems UnresolvedItem[]
+
+  @@unique([orderId, templateId])
+}
+
+/// 資料の版
+model DocumentVersion {
+  id             String        @id @default(cuid())
+  documentId     String
+  document       OrderDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  url            String
+  version        String
+  docDate        DateTime      @db.Date
+  isLatest       Boolean       @default(true)
+  note           String?
+  registeredById String
+  registeredBy   User          @relation(fields: [registeredById], references: [id])
+  registeredAt   DateTime      @default(now())
+
+  @@index([documentId, isLatest])
+}
+
+/// 未確定項目
+model UnresolvedItem {
+  id              String             @id @default(cuid())
+  orderId         String
+  order           Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  targetType      UnresolvedTarget
+  specTemplateId  String?
+  specTemplate    SpecFieldTemplate? @relation(fields: [specTemplateId], references: [id])
+  documentId      String?
+  document        OrderDocument?     @relation(fields: [documentId], references: [id])
+  /// 対象の名称（その他の場合は自由記述）
+  title           String
+  knownInfo       String?
+  confirmTarget   ConfirmTarget      @default(CUSTOMER)
+  responsibleType ResponsibleType    @default(SALES)
+  assigneeId      String
+  assignee        User               @relation("UnresolvedAssignee", fields: [assigneeId], references: [id])
+  dueDate         DateTime           @db.Date
+  designImpact    DesignImpact       @default(PARTIAL_START)
+  status          UnresolvedStatus   @default(OPEN)
+  resolution      String?
+  resolvedDate    DateTime?          @db.Date
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolvedBy      User?              @relation("UnresolvedResolvedBy", fields: [resolvedById], references: [id])
+  createdById     String
+  createdBy       User               @relation("UnresolvedCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  messages Message[]
+
+  @@index([orderId, status])
+  @@index([assigneeId, status])
+}
+
+/// タスク
+model Task {
+  id          String     @id @default(cuid())
+  orderId     String
+  order       Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  taskTypeId  String
+  taskType    TaskType   @relation(fields: [taskTypeId], references: [id])
+  content     String
+  assigneeId  String
+  assignee    User       @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  dueDate     DateTime?  @db.Date
+  status      TaskStatus @default(TODO)
+  completedAt DateTime?
+  createdById String
+  createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  messages Message[]
+
+  @@index([orderId])
+  @@index([assigneeId, status])
+}
+
+/// やり取り（削除不可。訂正は追記で行う）
+model Message {
+  id               String          @id @default(cuid())
+  orderId          String
+  order            Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind             MessageKind     @default(INTERNAL)
+  body             String
+  /// 顧客とのやり取り記録の相手先
+  counterpart      String?
+  channel          ContactChannel?
+  /// 顧客とのやり取りの日時
+  occurredAt       DateTime?
+  unresolvedItemId String?
+  unresolvedItem   UnresolvedItem? @relation(fields: [unresolvedItemId], references: [id])
+  taskId           String?
+  task             Task?           @relation(fields: [taskId], references: [id])
+  authorId         String
+  author           User            @relation("MessageAuthor", fields: [authorId], references: [id])
+  mentions         User[]          @relation("MessageMentions")
+  createdAt        DateTime        @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+/// ステータス履歴
+model StatusHistory {
+  id         String       @id @default(cuid())
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  actorId    String?
+  actor      User?        @relation(fields: [actorId], references: [id])
+  comment    String?
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+// ───────────────────────── 通知・記録 ─────────────────────────
+
+/// 通知
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  type        NotificationType
+  orderId     String?
+  order       Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  link        String?
+  readAt      DateTime?
+  emailResult EmailResult      @default(NOT_REQUIRED)
+  emailId     String?
+  email       OutboundEmail?   @relation(fields: [emailId], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([userId, readAt])
+}
+
+/// 送信メール
+model OutboundEmail {
+  id        String            @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  transport MailTransportType
+  result    EmailResult
+  error     String?
+  createdAt DateTime          @default(now())
+
+  notifications Notification[]
+
+  @@index([createdAt])
+}
+
+/// AI実行記録
+model AiRun {
+  id             String      @id @default(cuid())
+  orderId        String
+  order          Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User        @relation(fields: [createdById], references: [id])
+  /// 入力ファイル（名前・種類・サイズ・保存先）
+  inputFiles     Json
+  inputTextChars Int         @default(0)
+  model          String
+  location       String
+  promptTokens   Int?
+  outputTokens   Int?
+  outputJson     Json?
+  /// 採用結果（項目ごとの採用／修正／却下）
+  adoption       Json?
+  adoptedAt      DateTime?
+  status         AiRunStatus
+  error          String?
+  durationMs     Int?
+  createdAt      DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+/// 監査ログ
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id])
+  action      String
+  targetType  String
+  targetId    String?
+  /// 対象の表示名（オーダー番号など）
+  targetLabel String?
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}

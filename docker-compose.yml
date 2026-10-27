@@ -1,0 +1,16 @@
+# ローカル開発用の PostgreSQL
+#   docker compose up -d
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: we_app
+      POSTGRES_PASSWORD: we_app
+      POSTGRES_DB: we_order
+      TZ: Asia/Tokyo
+    ports:
+      - "5432:5432"
+    volumes:
+      - we_order_db:/var/lib/postgresql/data
+volumes:
+  we_order_db:
