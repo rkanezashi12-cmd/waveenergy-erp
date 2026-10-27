@@ -33,8 +33,9 @@ M1〜M8 を実装済み（M8 は GCP 上での実行が未確認）。**次は M
 
 ### AI のモデル
 
-- 既定値：`GEMINI_MODEL=gemini-2.5-flash`、`VERTEX_LOCATION=asia-northeast1`。
-- 実装時点（2026-10-27）に Google のデータ所在地のドキュメントで、東京リージョンで Gemini 2.5 Flash が提供されていることを確認した。Gemini 3 系の Flash は、安定版（GA）かどうかと東京リージョンでの提供を確認できなかったため採用していない。**デモ環境構築時に Vertex AI のコンソールで利用できる最新の安定版 Flash を確認し、`GEMINI_MODEL` を差し替えてここに記録する**（確認事項 No.9）。
+- 既定値：`GEMINI_MODEL=gemini-3.8-flash`、`VERTEX_LOCATION=global`（`infra/env/demo.env`）。
+- スキル gcp-bootstrap（2026-10-27c）によると、新しいプロジェクトでは `gemini-2.5-flash` など古いモデルが 404 になり、`gemini-3.8-flash`（global）で通った。モデル名は推測せず、**デプロイ後に Actions「gcp」の `models` で、このプロジェクトで使える名前と東京リージョン（asia-northeast1）での可否を確かめて決め、ここに記録する**。
+- global は処理場所が日本とは限らない。東京リージョンで使えなければ、本番のリージョンはお客様と合意する（確認事項 No.9）。
 - GCP なしで動かす場合は `AI_PROVIDER=mock`（「件名：」「顧客：」などの行を読み取るだけの簡易版）。
 
 ## 未完了事項
@@ -65,7 +66,7 @@ SPEC §14 の No.1〜10 はすべて未回答。仮の値で実装している�
 | 6 | 資料は `https://`（SharePoint 等）と `\\`（ファイルサーバー）の両方を受け付ける | ― |
 | 7 | 標準納期：太陽光 4か月、受配電盤 6か月、改造 3か月、その他 なし | 管理 → 製品区分 |
 | 8 | 送信元アドレス・Entra ID のアプリ登録は未定 | 環境変数（`docs/deploy.md`） |
-| 9 | `gemini-2.5-flash`（asia-northeast1） | 環境変数 `GEMINI_MODEL`・`VERTEX_LOCATION` |
+| 9 | `gemini-3.8-flash`（global。東京リージョンで使えるかは `models` で確認） | `infra/env/<env>.env` の `GEMINI_MODEL`・`VERTEX_LOCATION` |
 | 10 | ― | ― |
 
 ### A. 仕様に書かれていないため仮に決めた点（要確認）

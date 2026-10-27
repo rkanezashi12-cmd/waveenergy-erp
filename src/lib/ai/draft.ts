@@ -163,7 +163,7 @@ export async function runAiDraft(actor: Actor, orderId: string, input: { files: 
         createdById: actor.id,
         inputFiles,
         inputTextChars: text.length,
-        model: process.env.AI_PROVIDER === "mock" ? "mock" : process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+        model: process.env.AI_PROVIDER === "mock" ? "mock" : process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
         location: process.env.VERTEX_LOCATION ?? "asia-northeast1",
         status: "FAILED",
         error: message.slice(0, 1000),

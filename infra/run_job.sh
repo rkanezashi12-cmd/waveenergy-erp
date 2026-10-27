@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 管理用のコマンドを Cloud Run ジョブ ${APP}-tools で実行し、出力（Cloud Logging）を表示する。
 # 定期処理（毎朝のまとめ・受入催促）は Cloud Scheduler のジョブを今すぐ実行し、サービスのログを表示する。
-#   bash infra/run_job.sh <migrate | status | seed | create-admin | digest | reminder>
+#   bash infra/run_job.sh <migrate | status | seed | create-admin | models | digest | reminder>
 #   create-admin は ADMIN_EMAIL・ADMIN_NAME（任意で ADMIN_DEPARTMENT）を環境変数で渡す。
 set -euo pipefail
 
@@ -28,7 +28,7 @@ if [ "$COMMAND" = "digest" ] || [ "$COMMAND" = "reminder" ]; then
 fi
 
 case "$COMMAND" in
-  migrate | status | seed) EXTRA=() ;;
+  migrate | status | seed | models) EXTRA=() ;;
   create-admin)
     : "${ADMIN_EMAIL:?ADMIN_EMAIL を指定してください}" "${ADMIN_NAME:?ADMIN_NAME を指定してください}"
     # 値にカンマが入っても壊れないよう、区切り文字を | に変える（gcloud の書き方。@ はメールアドレスに含まれるので使わない）

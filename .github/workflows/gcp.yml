@@ -5,6 +5,7 @@
 #   migrate       DB マイグレーションだけ
 #   status        マイグレーションの状態
 #   create-admin  管理者ユーザーを作る（admin_email・admin_name を入力）
+#   models        Vertex AI で使える Gemini のモデル名の一覧と、GEMINI_MODEL の呼び出し確認
 #   digest        毎朝のまとめ通知を今すぐ実行（Cloud Scheduler 経由。認証の確認にも使う）
 #   reminder      受入催促を今すぐ実行（同上）
 name: gcp
@@ -16,7 +17,7 @@ on:
         description: "実行するコマンド"
         type: choice
         default: deploy
-        options: [deploy, seed, migrate, status, create-admin, digest, reminder]
+        options: [deploy, seed, migrate, status, create-admin, models, digest, reminder]
       env:
         description: "環境（infra/env/<env>.env）"
         type: choice

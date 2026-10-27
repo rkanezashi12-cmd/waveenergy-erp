@@ -73,7 +73,7 @@ export const env = {
     return process.env.GOOGLE_CLOUD_PROJECT ?? "";
   },
   get geminiModel() {
-    return process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+    return process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
   },
   get vertexLocation() {
     return process.env.VERTEX_LOCATION ?? "asia-northeast1";

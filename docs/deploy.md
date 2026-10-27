@@ -76,9 +76,10 @@ Actions のワークフロー「gcp」を手動で起動する（Actions → gcp
 | `seed` | マスタ・デモユーザー・サンプルオーダーを登録（`infra/env/<env>.env` の `SEED_*` に従う。何度実行してもよい。オーダーが1件でもあればサンプルオーダーは作らない） |
 | `migrate`・`status` | マイグレーションの適用・状態の表示 |
 | `create-admin` | 管理者ユーザーを作る（入力の `admin_email`・`admin_name`）。パスワードは設定しない（Entra ID でログインするか、管理画面でパスワードを再設定する） |
+| `models` | Vertex AI で使える Gemini のモデル名（asia-northeast1・global）と、`GEMINI_MODEL` の呼び出し確認 |
 | `digest`・`reminder` | Cloud Scheduler のジョブを今すぐ実行し、アプリのログ（HTTPステータス・件数）を表示する。定期処理の認証（OIDC）の確認に使う |
 
-初回は `deploy` → `seed` の順に実行する。
+初回は `deploy` → `seed` → `models`（AI のモデル名の確認）→ `digest`（定期処理の認証の確認）の順に実行する。
 
 ### アプリの設定（環境変数）
 
@@ -112,7 +113,7 @@ Actions のワークフロー「gcp」を手動で起動する（Actions → gcp
 ## 6. 運用
 
 - **バックアップ**：Cloud SQL の自動バックアップ（毎日 日本時間3時、7世代）とポイントインタイムリカバリ（7日）。復元はコンソールの Cloud SQL →「バックアップ」から別インスタンスに行う。
-- **AI のモデル**：`GEMINI_MODEL`（既定 `gemini-2.5-flash`）・`VERTEX_LOCATION`（既定 `asia-northeast1`）。新しい安定版の Flash が東京リージョンで使えるかをコンソールで確かめて差し替える【要確認】。
+- **AI のモデル**：`GEMINI_MODEL`（既定 `gemini-3.8-flash`）・`VERTEX_LOCATION`（既定 `global`）。モデル名は推測しない。Actions の `models` で、そのプロジェクトで使える名前と東京リージョン（asia-northeast1）での可否を確かめて決める（新しいプロジェクトでは古いモデルが 404 になる）。global は処理場所が日本とは限らない【要確認：SPEC §4.4】。
 - **費用**：デモは Cloud SQL の最小構成（db-f1-micro）・Cloud Run の最小インスタンス0。請求先全体で月5,000円の予算で、100%に達したら請求先を外して止める（止まったらコンソールの「お支払い」で請求先をつなぎ直す。費用の集計は数時間〜1日遅れるので、少し超えてから止まる）。
 - **ログ**：Cloud Logging。アプリは個人情報や資料の本文をログに出さない（SPEC §8）。
 
