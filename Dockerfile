@@ -28,16 +28,16 @@ FROM base AS deps
 # postinstall で prisma generate が走るため、スキーマと設定ファイルを先に置く
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
-# prisma.config.ts は env("DATABASE_URL") を読み、未設定だとエラーになる。
-# generate では接続しないため、ビルド中だけダミー値を渡す（イメージには残さない）。
-RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npm ci --no-audit --no-fund
+# prisma generate は DATABASE_URL が無くても動く（prisma.config.ts）。DB には接続しない
+RUN npm ci --no-audit --no-fund
 
 # ───────────── Next.js のビルド ─────────────
 FROM deps AS builder
 COPY . .
 # public/ は空だと Git に含まれないため、無ければ作る
 RUN mkdir -p public
-# ビルド時にサーバー側の環境変数を参照してもよいようにダミー値を渡す（実行時の値は Cloud Run で設定する）
+# ビルド中にサーバー側のモジュールが読み込まれても困らないようダミー値を渡す（RUN の中だけで有効。
+# イメージには残らない。実行時の値は Cloud Run の環境変数と Secret Manager で渡す）
 RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" \
     AUTH_SECRET="build-only-dummy-secret" \
     APP_ENV="demo" \

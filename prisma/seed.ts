@@ -3,7 +3,8 @@
 // 環境変数
 //   SEED_DEMO_PASSWORD        デモユーザーの初期パスワード（既定：Demo1234!）
 //   SEED_MUST_CHANGE_PASSWORD 初回ログイン時のパスワード変更を求めるか（既定：true）
-//   SEED_SAMPLE_ORDERS        サンプルオーダーを作るか（既定：true）
+//   SEED_DEMO_USERS           デモユーザー（@example.com）を作るか（既定：true。本番では false）
+//   SEED_SAMPLE_ORDERS        サンプルオーダーを作るか（既定：true。デモユーザーが無いときは作らない）
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import type {
@@ -169,7 +170,8 @@ async function seedMasters() {
   const mustChange = bool(process.env.SEED_MUST_CHANGE_PASSWORD, true);
   const hash = await bcrypt.hash(password, 10);
   const users = new Map<string, { id: string; roles: Role[]; departmentId: string | null }>();
-  for (const u of USERS) {
+  const demoUsers = bool(process.env.SEED_DEMO_USERS, true);
+  for (const u of demoUsers ? USERS : []) {
     const rec = await prisma.user.upsert({
       where: { email: u.email },
       create: {
@@ -216,7 +218,8 @@ async function seedMasters() {
           name: c.name,
           standardLeadTimeMonths: c.months,
           sortOrder: c.sort,
-          receptionUsers: { connect: [{ id: users.get("reception")!.id }] },
+          // デモユーザーが無いときは未設定（技術受付ロールの全員に通知される）
+          receptionUsers: users.has("reception") ? { connect: [{ id: users.get("reception")!.id }] } : undefined,
           notificationGroups: { connect: categoryGroups[c.code].map((n) => ({ id: groups.get(n)! })) },
         },
       }));
@@ -566,7 +569,7 @@ async function seedOrders(ctx: Ctx) {
 async function main() {
   const ctx = await seedMasters();
   console.log("マスタを登録しました。");
-  if (bool(process.env.SEED_SAMPLE_ORDERS, true)) {
+  if (bool(process.env.SEED_SAMPLE_ORDERS, true) && ctx.users.size > 0) {
     await seedOrders(ctx);
     console.log("サンプルオーダーを登録しました。");
   }

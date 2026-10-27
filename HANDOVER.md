@@ -4,7 +4,7 @@
 
 ## 現在のマイルストーン
 
-M1〜M7 を実装済み。M8（GCP デプロイ）は作業中。**次は M9（Microsoft Entra ID ログイン・Microsoft Graph メール送信）**。M9 は Wave Energy様のテナント準備（確認事項 No.8）が済んでから着手する。
+M1〜M8 を実装済み（M8 は GCP 上での実行が未確認）。**次は M9（Microsoft Entra ID ログイン・Microsoft Graph メール送信）**。M9 は Wave Energy様のテナント準備（確認事項 No.8）が済んでから着手する。
 
 ## ブランチと PR について
 
@@ -38,6 +38,12 @@ M1〜M7 を実装済み。M8（GCP デプロイ）は作業中。**次は M9（M
 
 ## 未完了事項
 
+- M8 のスクリプトは GCP に接続できない環境で作ったため、**実際の GCP では未実行**（gcloud のフラグ検査・スタブでの通し実行・Docker イメージのビルドと Cloud SQL 形式の接続での起動は確認済み）。最初の構築時に次を確認する。
+  - Cloud Scheduler の OIDC トークンでの定期処理の認証（`infra/08-scheduler.sh demo --run-now` と Cloud Run のログ）。
+  - GitHub Actions のデプロイ用サービスアカウントを `roles/run.developer` に下げられるか（既定は `roles/run.admin`。`04-service-accounts.sh` のコメント参照）。
+  - プライベートリポジトリで GitHub Environments（承認者）が使えるプランか。使えなければ本番は `infra/07-deploy.sh` で手動デプロイする。
+  - 本番の Cloud SQL のマシンタイプ（仮：`db-custom-1-3840`）と高可用性構成（仮：regional）【要確認】。
+- 本番の初期構築：`07-deploy.sh --seed`（`SEED_DEMO_USERS=false`・`SEED_SAMPLE_ORDERS=false`。マスタだけを登録）→ `infra/create-admin.sh` で最初の管理者を作る（`prisma/create-admin.ts`）。
 - M9：Entra ID ログインと Graph メール送信。コードは入れてある（`src/lib/auth.ts` の MicrosoftEntraID プロバイダ、`src/lib/notify/mail.ts` の `sendGraph`）が、**テナントが無いため未検証**。
 - §11-9 の GCP 上での構築確認（上記）。
 - Vertex AI の実呼び出しでの精度・応答時間（60秒以内）の確認。モックでしか通していない。
@@ -87,6 +93,8 @@ SPEC §14 の No.1〜10 はすべて未回答。仮の値で実装している�
 19. **AI入力ファイルの上限**：5ファイル、1ファイル10MB、合計20MB。
 20. **受入催促**：設定日数（営業日）以上たった受入待ちのオーダーについて、1日1回まで技術受付と営業担当に通知する（Cloud Scheduler は平日8〜18時に毎時実行）。
 21. **ユーザーの削除**はできない（無効にする）。マスタも同様。
+22. **Cloud Run のアクセス**：アプリはログイン画面があるため、Cloud Run の起動元 IAM チェックを無効にして公開している（`--no-invoker-iam-check`。`PUBLIC_ACCESS_MODE=allUsers` も選べる）。社内ネットワークからだけに絞るか（IAP・ロードバランサ等）は要相談。
+23. **コンテナのタイムゾーン**：Cloud Run のサービス・ジョブに `TZ=Asia/Tokyo` を設定している（アプリの日付処理は明示的に日本時間で計算しているため、念のための設定）。
 
 ## 次にやること
 

@@ -5,7 +5,8 @@ import { PrismaClient } from "@/generated/prisma/client";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  // 接続数の上限（Cloud SQL の小さいインスタンスは同時接続数が少ないため、環境変数で絞る）
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_MAX ?? 10) });
   return new PrismaClient({ adapter });
 }
 
