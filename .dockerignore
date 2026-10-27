@@ -1,0 +1,33 @@
+# コンテナのビルドに含めないもの
+# 秘密情報（.env）は絶対にイメージに入れない
+.env
+.env.*
+!.env.example
+
+# 依存・生成物（コンテナ内で作り直す）
+node_modules
+.next
+out
+build
+coverage
+src/generated
+*.tsbuildinfo
+next-env.d.ts
+
+# ローカル専用
+.local-uploads
+e2e
+test-results
+playwright-report
+.git
+.github
+.vscode
+.idea
+.DS_Store
+npm-debug.log*
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# インフラ設定（プロジェクト固有値を含むため）
+infra/config/*.env

@@ -1,0 +1,109 @@
+# CI：プルリクエストと main への push で、型チェック・Lint・テスト・マイグレーション・シード・ビルドを確認する
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 型チェック・Lint・テスト・ビルド
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # マイグレーションとシードの確認用（本番と同じ PostgreSQL 16）
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: we_app
+          POSTGRES_PASSWORD: we_app
+          POSTGRES_DB: we_order
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U we_app -d we_order"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # CI 専用のダミー値（本物の秘密情報は使わない）
+      DATABASE_URL: postgresql://we_app:we_app@localhost:5432/we_order?schema=public
+      AUTH_SECRET: ci-only-dummy-secret-not-for-production
+      APP_ENV: demo
+      APP_BASE_URL: http://localhost:3000
+      AUTH_PASSWORD_LOGIN: "true"
+      AI_PROVIDER: mock
+      MAIL_TRANSPORT: db
+      CRON_SECRET: ci-only-cron-secret
+      SEED_DEMO_PASSWORD: CiDemo1234
+      SEED_MUST_CHANGE_PASSWORD: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 依存パッケージのインストール（prisma generate を含む）
+        run: npm ci
+
+      - name: マイグレーションの適用確認
+        run: npx prisma migrate deploy
+
+      - name: スキーマとマイグレーションの食い違いの確認
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: シードの動作確認
+        run: npx prisma db seed
+
+      - name: Lint
+        run: npm run lint
+
+      - name: 型チェック
+        run: |
+          npx next typegen
+          npm run typecheck
+
+      - name: 単体テスト
+        run: npm test
+
+      - name: ビルド
+        run: npm run build
+
+  docker:
+    name: コンテナイメージのビルド確認
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: runner（Cloud Run サービス用）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: false
+          build-args: NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim
+          cache-from: type=gha,scope=we-order
+          cache-to: type=gha,scope=we-order,mode=max
+
+      - name: tools（マイグレーション・シード用）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: tools
+          push: false
+          build-args: NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim
+          cache-from: type=gha,scope=we-order
