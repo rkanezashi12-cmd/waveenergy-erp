@@ -30,4 +30,4 @@ Dockerfile
 .dockerignore
 
 # インフラ設定（プロジェクト固有値を含むため）
-infra/config/*.env
+infra/env/production.env

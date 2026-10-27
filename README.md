@@ -82,6 +82,7 @@ src/lib/             業務ロジック
   reports.ts           レポート
   cron.ts              毎朝のまとめ通知・受入催促
 e2e/                 受け入れ基準の通し確認
-infra/               GCP 構築スクリプト
+infra/               GCP の構築（setup.sh：Cloud Shell で1回）・デプロイ（deploy.sh・run_job.sh：GitHub Actions から）
+scripts/             Cloud Run ジョブ・サービスで動かすスクリプト（管理コマンド・予算超過の停止）
 docs/                ドキュメント
 ```

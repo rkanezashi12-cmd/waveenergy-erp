@@ -1,0 +1,92 @@
+# GCP へのデプロイと管理用コマンドの実行（手動で起動する。Claude も GitHub の連携から起動する）
+# GCP への認証は Workload Identity 連携（鍵ファイルなし）。準備は infra/setup.sh（Cloud Shell で1回）。
+#   deploy        イメージを作り、マイグレーション → アプリ・予算超過の停止サービスをデプロイ → 起動確認
+#   seed          マスタ・デモユーザー・サンプルオーダーを登録（infra/env/<env>.env の SEED_* に従う）
+#   migrate       DB マイグレーションだけ
+#   status        マイグレーションの状態
+#   create-admin  管理者ユーザーを作る（admin_email・admin_name を入力）
+#   digest        毎朝のまとめ通知を今すぐ実行（Cloud Scheduler 経由。認証の確認にも使う）
+#   reminder      受入催促を今すぐ実行（同上）
+name: gcp
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "実行するコマンド"
+        type: choice
+        default: deploy
+        options: [deploy, seed, migrate, status, create-admin, digest, reminder]
+      env:
+        description: "環境（infra/env/<env>.env）"
+        type: choice
+        default: demo
+        options: [demo]
+      admin_email:
+        description: "create-admin のときのメールアドレス"
+        type: string
+        default: ""
+      admin_name:
+        description: "create-admin のときの氏名"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      INPUT_COMMAND: ${{ inputs.command }}
+      INPUT_ENV: ${{ inputs.env }}
+      ADMIN_EMAIL: ${{ inputs.admin_email }}
+      ADMIN_NAME: ${{ inputs.admin_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 環境の設定を読む
+        run: |
+          file="infra/env/${INPUT_ENV}.env"
+          if grep -q "TODO" "$file"; then
+            echo "::error::${file} に TODO が残っています（infra/setup.sh の出力を入れる）"
+            exit 1
+          fi
+          grep -v '^#' "$file" | grep '=' >> "$GITHUB_ENV"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: イメージを作って載せる
+        if: inputs.command == 'deploy'
+        run: |
+          base="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${APP}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          # Docker Hub の回数制限を避けるため、ベースイメージは mirror.gcr.io から取る
+          args=(--build-arg NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim)
+          docker build "${args[@]}" --target runner -t "${base}/app:${GITHUB_SHA}" .
+          docker build "${args[@]}" --target tools -t "${base}/tools:${GITHUB_SHA}" .
+          docker push "${base}/app:${GITHUB_SHA}"
+          docker push "${base}/tools:${GITHUB_SHA}"
+          {
+            echo "IMAGE_APP=${base}/app:${GITHUB_SHA}"
+            echo "IMAGE_TOOLS=${base}/tools:${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
+
+      - name: デプロイ
+        if: inputs.command == 'deploy'
+        run: bash infra/deploy.sh
+
+      - name: 実行
+        if: inputs.command != 'deploy'
+        run: bash infra/run_job.sh "$INPUT_COMMAND"

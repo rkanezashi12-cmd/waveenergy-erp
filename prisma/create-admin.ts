@@ -1,4 +1,4 @@
-// 最初の管理者ユーザーを作る（本番の初期構築用。infra/create-admin.sh から Cloud Run ジョブで実行する）
+// 最初の管理者ユーザーを作る（本番の初期構築用。GitHub Actions の create-admin（infra/run_job.sh）で Cloud Run ジョブとして実行する）
 //   ADMIN_EMAIL            必須。メールアドレス（小文字にして保存）
 //   ADMIN_NAME             必須。氏名
 //   ADMIN_DEPARTMENT       任意。部署名（既定：システム管理。無ければ作る）

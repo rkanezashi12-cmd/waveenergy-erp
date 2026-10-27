@@ -8,8 +8,9 @@ M1〜M8 を実装済み（M8 は GCP 上での実行が未確認）。**次は M
 
 ## ブランチと PR について
 
-- SPEC §0-2 は「1マイルストーン＝1ブランチ＝1PR」だが、この作業セッションでは指定された1本のブランチ `claude/wave-energy-order-spec-app-wx4y7s` にしか push できなかったため、**M1〜M8 を同じブランチにマイルストーンごとのコミットとして積んでいる**（`git log` で M1〜M8 の区切りが分かる）。
-- リポジトリにはまだ `main` ブランチが無い（初回コミットがこのブランチ）。PR を作るには、先に `main` を作る必要がある。例：最初のコミット（M1）の親が無いため、空の初期コミットで `main` を作ってから、このブランチを PR にする。運用方法を金指さんと決めてから進める。
+- SPEC §0-2 は「1マイルストーン＝1ブランチ＝1PR」だが、M1〜M8 は1本のブランチにマイルストーンごとのコミットとして積んだ（`git log` で区切りが分かる）。2026-10-27 に金指さんの指示で `main` に取り込んだ。
+- 今後のマイルストーン（M9〜）は `main` から作業ブランチを切り、PR にする。
+- GitHub の既定のブランチを `main` に変える（設定画面。Actions の手動起動に必要）。
 
 ## 完了事項
 
@@ -22,7 +23,7 @@ M1〜M8 を実装済み（M8 は GCP 上での実行が未確認）。**次は M
 | M5 | 通知（アプリ内・メール送信方式の切替 db/smtp/graph・送信メール履歴）、タスク、やり取り（メンション）、個人設定 | `src/lib/notify/`、`src/lib/orders/tasks.ts`、`messages.ts` |
 | M6 | AI下書き（Vertex AI Gemini／モック、Cloud Storage への一時保存、AI実行記録、採用／修正／却下） | `src/lib/ai/`、`src/app/api/orders/[id]/ai-draft/` |
 | M7 | 未確定項目レポート（一覧・集計）、発令品質レポート、CSV（BOM付き）、ホーム、毎朝のまとめ通知・受入催促 | `src/lib/reports.ts`、`src/lib/cron.ts` |
-| M8 | Dockerfile、`infra/` の構築スクリプト、GitHub Actions、`docs/deploy.md` | `infra/`、`.github/workflows/`、`docs/deploy.md` |
+| M8 | Dockerfile、GCP の構築（`infra/setup.sh`：Cloud Shell で1回）、デプロイと管理コマンド（GitHub Actions「gcp」→ `infra/deploy.sh`・`run_job.sh`）、予算超過の停止、`docs/deploy.md` | `infra/`、`scripts/`、`.github/workflows/`、`docs/deploy.md` |
 
 ### 確認方法
 
@@ -38,12 +39,11 @@ M1〜M8 を実装済み（M8 は GCP 上での実行が未確認）。**次は M
 
 ## 未完了事項
 
-- M8 のスクリプトは GCP に接続できない環境で作ったため、**実際の GCP では未実行**（gcloud のフラグ検査・スタブでの通し実行・Docker イメージのビルドと Cloud SQL 形式の接続での起動は確認済み）。最初の構築時に次を確認する。
-  - Cloud Scheduler の OIDC トークンでの定期処理の認証（`infra/08-scheduler.sh demo --run-now` と Cloud Run のログ）。
-  - GitHub Actions のデプロイ用サービスアカウントを `roles/run.developer` に下げられるか（既定は `roles/run.admin`。`04-service-accounts.sh` のコメント参照）。
-  - プライベートリポジトリで GitHub Environments（承認者）が使えるプランか。使えなければ本番は `infra/07-deploy.sh` で手動デプロイする。
-  - 本番の Cloud SQL のマシンタイプ（仮：`db-custom-1-3840`）と高可用性構成（仮：regional）【要確認】。
-- 本番の初期構築：`07-deploy.sh --seed`（`SEED_DEMO_USERS=false`・`SEED_SAMPLE_ORDERS=false`。マスタだけを登録）→ `infra/create-admin.sh` で最初の管理者を作る（`prisma/create-admin.ts`）。
+- M8 は GCP 上では**まだ実行していない**（偽の gcloud での通し実行・gcloud のオプションの確認・Docker イメージのビルドは確認済み）。進め方はスキル gcp-bootstrap の形：
+  1. 金指さん：請求先のリンク、リポジトリを非公開・既定のブランチを main に、Cloud Shell で `infra/setup.sh`（`docs/deploy.md` の 2）→ 出力を Claude に貼る
+  2. Claude：`infra/env/demo.env` の TODO を埋めて push → Actions「gcp」の `deploy` → `seed` → `digest`（定期処理の OIDC 認証の確認）
+  3. AI下書きを実際の Vertex AI で試す（架空の見積書・メール）
+- 本番の Cloud SQL のマシンタイプ（仮：`db-custom-1-3840`）と高可用性構成（仮：regional）【要確認】。
 - M9：Entra ID ログインと Graph メール送信。コードは入れてある（`src/lib/auth.ts` の MicrosoftEntraID プロバイダ、`src/lib/notify/mail.ts` の `sendGraph`）が、**テナントが無いため未検証**。
 - §11-9 の GCP 上での構築確認（上記）。
 - Vertex AI の実呼び出しでの精度・応答時間（60秒以内）の確認。モックでしか通していない。
@@ -93,13 +93,12 @@ SPEC §14 の No.1〜10 はすべて未回答。仮の値で実装している�
 19. **AI入力ファイルの上限**：5ファイル、1ファイル10MB、合計20MB。
 20. **受入催促**：設定日数（営業日）以上たった受入待ちのオーダーについて、1日1回まで技術受付と営業担当に通知する（Cloud Scheduler は平日8〜18時に毎時実行）。
 21. **ユーザーの削除**はできない（無効にする）。マスタも同様。
-22. **Cloud Run のアクセス**：アプリはログイン画面があるため、Cloud Run の起動元 IAM チェックを無効にして公開している（`--no-invoker-iam-check`。`PUBLIC_ACCESS_MODE=allUsers` も選べる）。社内ネットワークからだけに絞るか（IAP・ロードバランサ等）は要相談。
+22. **Cloud Run のアクセス**：アプリはログイン画面があるため、Cloud Run の起動元 IAM チェックを無効にして公開している（`--no-invoker-iam-check`）。そのためデプロイ用のサービスアカウントは `roles/run.admin`。社内ネットワークからだけに絞るか（IAP・ロードバランサ等）は要相談。
 23. **コンテナのタイムゾーン**：Cloud Run のサービス・ジョブに `TZ=Asia/Tokyo` を設定している（アプリの日付処理は明示的に日本時間で計算しているため、念のための設定）。
 
 ## 次にやること
 
-1. 金指さんのデモ用 GCP プロジェクトで `docs/deploy.md` の手順を実行し、§11-9 を確認する。Vertex AI で利用できる最新の安定版 Flash を確認して `GEMINI_MODEL` を決め、本書に記録する。
+1. デモ用 GCP プロジェクト `waveenergy-erp` で `docs/deploy.md` の手順を実行し、§11-9 を確認する。Vertex AI で利用できる最新の安定版 Flash を確認して `GEMINI_MODEL` を決め、本書に記録する。
 2. デモ環境で実際の Vertex AI を使って AI 下書きを試し（架空の見積書 PDF・メールで）、精度と応答時間を確認する。
-3. `main` ブランチの作成と PR 運用を決める（上記「ブランチと PR について」）。
-4. 確認事項（SPEC §14 と上記 A）を Wave Energy様・金指さんと確認し、マスタと実装を直す。
-5. テナント準備後に M9（Entra ID のアプリ登録、`AUTH_MICROSOFT_ENTRA_ID_*`・`GRAPH_*` の設定、`AUTH_PASSWORD_LOGIN=false`、`MAIL_TRANSPORT=graph`）を検証する。
+3. 確認事項（SPEC §14 と上記 A）を Wave Energy様・金指さんと確認し、マスタと実装を直す。
+4. テナント準備後に M9（Entra ID のアプリ登録、`AUTH_MICROSOFT_ENTRA_ID_*`・`GRAPH_*` の設定、`AUTH_PASSWORD_LOGIN=false`、`MAIL_TRANSPORT=graph`）を検証する。
