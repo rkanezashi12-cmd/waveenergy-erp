@@ -99,3 +99,9 @@ export function fmtDateTime(d: Date | null | undefined): string {
 export function monthKey(d: Date): string {
   return todayStr(d).slice(0, 7);
 }
+
+/** 表示用：日時（timestamp）を日本時間の日付 YYYY/MM/DD で */
+export function fmtDay(d: Date | null | undefined): string {
+  if (!d) return "";
+  return todayStr(d).replaceAll("-", "/");
+}

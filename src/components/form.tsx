@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/errors";
 import { Alert, Button, cx } from "@/components/ui";
 
 type AnyResult = ActionResult<unknown> | null;
-const DisclosureCtx = createContext<{ close: () => void } | null>(null);
+const DisclosureCtx = createContext<{ close: (message?: string) => void } | null>(null);
 type Ctx = { state: AnyResult; pending: boolean };
 const FormCtx = createContext<Ctx>({ state: null, pending: false });
 
@@ -69,8 +69,8 @@ export function ActionForm({
             if (resetOnSuccess) ref.current?.reset();
             onSuccess?.(r);
             router.refresh();
-            // 開閉パネルの中のフォームは、成功したら閉じる
-            if (closeOnSuccess) disclosure?.close();
+            // 開閉パネルの中のフォームは、成功したら閉じる（警告があるときは内容を見せるため閉じない）
+            if (closeOnSuccess && !r.warnings?.length) disclosure?.close(r.message);
           }
         });
       }}
@@ -142,16 +142,36 @@ export function Disclosure({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [flash, setFlash] = useState<string | null>(null);
   return (
     <div className={cx(className)}>
+      {!open && flash && (
+        <div className="mb-2">
+          <Alert kind="success">{flash}</Alert>
+        </div>
+      )}
       {!open && (
-        <Button type="button" variant={variant} onClick={() => setOpen(true)}>
+        <Button
+          type="button"
+          variant={variant}
+          onClick={() => {
+            setFlash(null);
+            setOpen(true);
+          }}
+        >
           {label}
         </Button>
       )}
       {open && (
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <DisclosureCtx.Provider value={{ close: () => setOpen(false) }}>{children}</DisclosureCtx.Provider>
+          <DisclosureCtx.Provider
+            value={{
+              close: (message) => {
+                setFlash(message ?? null);
+                setOpen(false);
+              },
+            }}
+          >{children}</DisclosureCtx.Provider>
           <div className="mt-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               閉じる
