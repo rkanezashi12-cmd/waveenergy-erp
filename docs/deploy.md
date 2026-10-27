@@ -31,7 +31,7 @@
 | Artifact Registry | `weorder`（最新3つだけ残す） | setup.sh |
 | サービスアカウント | `weorder-app`（実行）・`weorder-deployer`（Actions）・`weorder-scheduler`・`weorder-budget-stop`・`weorder-pubsub-invoker` | setup.sh |
 | Workload Identity 連携 | プール `github`・プロバイダ `github`（このリポジトリだけ） | setup.sh |
-| 予算 | 月5,000円。50%・90%・100%でメール、デモは100%で請求先を外して止める | setup.sh |
+| 予算 | 「waveenergy-erp 自動停止（請求先全体）」：**請求先アカウントの全プロジェクトの合計**で月5,000円。50%・90%・100%でメール、デモは100%でこのプロジェクトの請求先を外して止める | setup.sh |
 
 ## 1. 画面で行うこと（人）
 
@@ -56,7 +56,15 @@ cd ~ && mkdir -p waveenergy-erp-setup && cd waveenergy-erp-setup && unzip -qo ~/
 
 - `gcloud config set project` は使わない（Cloud Shell のホームはほかの案件と共通のため。すべて `--project` で指定している）。
 - 何度実行してもよい（あるものは作り直さない）。IAM の反映待ちで失敗したら、もう一度実行する。
-- 本番：本番のプロジェクトで `AUTO_STOP=false SQL_TIER=db-custom-1-3840 SQL_AVAILABILITY=regional ENV_NAME=production` を付けて実行する（マシンタイプ・高可用性は【要確認】）。
+- 本番：本番のプロジェクトで `AUTO_STOP=false BUDGET_SCOPE=project SQL_TIER=db-custom-1-3840 SQL_AVAILABILITY=regional ENV_NAME=production` を付けて実行する（マシンタイプ・高可用性・予算額は【要確認】）。
+
+### 予算を「請求先全体で5,000円」にする考え方
+
+- 予算は請求先アカウントに作られる。Pub/Sub でつなげる通知先は1つの予算に1つだけなので、**案件ごとに予算を1つずつ作り、どれも対象を「すべてのプロジェクト」にする**（`BUDGET_SCOPE=all`。既定）。
+- どの予算も請求先全体の合計で判定するため、合計が5,000円に達すると、各案件の停止サービスがそれぞれ自分のプロジェクトの請求先を外す。結果として全体で5,000円が上限になる。
+- 同じ請求先のほかのデモ案件の予算も、対象を「すべてのプロジェクト」・金額5,000円にそろえる（コンソールの「予算とアラート」→ 予算を編集 →「スコープ」→ プロジェクトを「すべてのプロジェクト」）。そろえていない案件は、自分のプロジェクトの費用だけで判定するので、全体の上限では止まらない。
+- メールは予算ごとに届くので、同じ内容のメールが案件の数だけ届く。
+- 同じ請求先に止めてはいけないプロジェクトがあるなら、そのプロジェクトの費用も合計に入る点に注意する（本番は請求先を分け、`BUDGET_SCOPE=project`・`AUTO_STOP=false` にする）。
 
 ## 3. デプロイ（Claude が GitHub Actions で行う）
 
@@ -96,7 +104,7 @@ Actions のワークフロー「gcp」を手動で起動する（Actions → gcp
 
 ## 5. 本番への載せ替え
 
-1. Wave Energy様のプロジェクトで 1・2 を行う（`AUTO_STOP=false` など。2 の本番の注を参照）。
+1. Wave Energy様のプロジェクトで 1・2 を行う（`AUTO_STOP=false`・`BUDGET_SCOPE=project` など。2 の本番の注を参照）。
 2. `infra/env/production.env.example` を `production.env` にコピーして値を入れ、`.github/workflows/gcp.yml` の `env` の選択肢に `production` を足す。
 3. `deploy` → `seed`（`SEED_DEMO_USERS=false`・`SEED_SAMPLE_ORDERS=false`。マスタだけを登録）→ `create-admin` で最初の管理者を作る。
 4. M9 の準備ができたら：Entra ID のアプリ登録の値（`AUTH_MICROSOFT_ENTRA_ID_*`）と Graph の値（`GRAPH_*`）を Secret Manager と env に入れ、`AUTH_PASSWORD_LOGIN=false`・`MAIL_TRANSPORT=graph` にする（`infra/deploy.sh` に渡す変数を足す）。
@@ -105,7 +113,7 @@ Actions のワークフロー「gcp」を手動で起動する（Actions → gcp
 
 - **バックアップ**：Cloud SQL の自動バックアップ（毎日 日本時間3時、7世代）とポイントインタイムリカバリ（7日）。復元はコンソールの Cloud SQL →「バックアップ」から別インスタンスに行う。
 - **AI のモデル**：`GEMINI_MODEL`（既定 `gemini-2.5-flash`）・`VERTEX_LOCATION`（既定 `asia-northeast1`）。新しい安定版の Flash が東京リージョンで使えるかをコンソールで確かめて差し替える【要確認】。
-- **費用**：デモは Cloud SQL の最小構成（db-f1-micro）・Cloud Run の最小インスタンス0。月5,000円の予算で、100%に達したら請求先を外して止める（止まったらコンソールの「お支払い」で請求先をつなぎ直す）。
+- **費用**：デモは Cloud SQL の最小構成（db-f1-micro）・Cloud Run の最小インスタンス0。請求先全体で月5,000円の予算で、100%に達したら請求先を外して止める（止まったらコンソールの「お支払い」で請求先をつなぎ直す。費用の集計は数時間〜1日遅れるので、少し超えてから止まる）。
 - **ログ**：Cloud Logging。アプリは個人情報や資料の本文をログに出さない（SPEC §8）。
 
 ## 7. デモ環境を消す

@@ -14,6 +14,9 @@
 #   - Secret Manager：DB の接続文字列、Auth.js の鍵、デモユーザーの初期パスワード
 #   - Cloud Scheduler：毎朝のまとめ通知・受入催促（OIDC トークンでアプリを呼ぶ）
 #   - Pub/Sub と予算（AUTO_STOP=true なら予算の 100% で請求先を外して止める。デモ用。本番は AUTO_STOP=false）
+#     既定の BUDGET_SCOPE=all は「請求先アカウントの全プロジェクトの合計」で判定する。同じ請求先のデモ案件がすべてこの形なら、
+#     合計が予算に達したとき、各案件がそれぞれ自分のプロジェクトを止める（全体で上限を共有する）。
+#     BUDGET_SCOPE=project はこのプロジェクトの費用だけで判定する（本番など、請求先を分けたとき）
 #
 # Cloud Run のサービス・ジョブは GitHub Actions（.github/workflows/gcp.yml → infra/deploy.sh）が作る。
 # Cloud SQL のインスタンスを初めて作るときは 10〜15 分かかる。
@@ -26,6 +29,7 @@ REGION="${REGION:-asia-northeast1}"
 ENV_NAME="${ENV_NAME:-demo}"
 AUTO_STOP="${AUTO_STOP:-true}"
 BUDGET_AMOUNT="${BUDGET_AMOUNT:-}"           # 請求先アカウントの通貨で。空なら JPY は 5000、それ以外は 35
+BUDGET_SCOPE="${BUDGET_SCOPE:-all}"          # all：請求先アカウントの全プロジェクトの合計 / project：このプロジェクトだけ
 SQL_TIER="${SQL_TIER:-db-f1-micro}"          # デモは最小構成。本番は db-custom-1-3840 など【要確認】
 SQL_AVAILABILITY="${SQL_AVAILABILITY:-zonal}" # 本番で高可用性にするなら regional（費用は約2倍）
 SQL_INSTANCE="${APP}-db"
@@ -238,11 +242,18 @@ CURRENCY="$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format='value(
 if [ -z "$BUDGET_AMOUNT" ]; then
   if [ "$CURRENCY" = "JPY" ]; then BUDGET_AMOUNT=5000; else BUDGET_AMOUNT=35; fi
 fi
-BUDGET_NAME="${PROJECT_ID} 自動停止"
+if [ "$BUDGET_SCOPE" = "project" ]; then
+  BUDGET_NAME="${PROJECT_ID} 自動停止"
+  SCOPE_ARGS=(--filter-projects="projects/${PROJECT_ID}")
+else
+  # 対象を絞らない＝請求先アカウントの全プロジェクトの合計
+  BUDGET_NAME="${PROJECT_ID} 自動停止（請求先全体）"
+  SCOPE_ARGS=()
+fi
 if [ -z "$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" \
   --filter="displayName=\"${BUDGET_NAME}\"" --format='value(name)' 2>/dev/null)" ]; then
   if ! gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name="$BUDGET_NAME" \
-    --budget-amount="${BUDGET_AMOUNT}${CURRENCY}" --filter-projects="projects/${PROJECT_ID}" \
+    --budget-amount="${BUDGET_AMOUNT}${CURRENCY}" "${SCOPE_ARGS[@]}" \
     --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0 \
     --notifications-rule-pubsub-topic="projects/${PROJECT_ID}/topics/budget-alerts" --quiet; then
     echo "予算を作れませんでした（請求先アカウントの権限が必要）。コンソールの「予算とアラート」で作り、Pub/Sub のトピック budget-alerts をつないでください" >&2
@@ -259,7 +270,7 @@ WIF_PROVIDER=${WIF_PROVIDER}
 DEPLOYER_SA=${DEPLOYER_SA}
 SERVICE_URL=${SERVICE_URL}
 SQL_CONNECTION=${SQL_CONNECTION}
-BUDGET=${BUDGET_AMOUNT}${CURRENCY} AUTO_STOP=${AUTO_STOP}
+BUDGET=${BUDGET_AMOUNT}${CURRENCY} SCOPE=${BUDGET_SCOPE} AUTO_STOP=${AUTO_STOP}
 EOF
 
 cat <<EOF
